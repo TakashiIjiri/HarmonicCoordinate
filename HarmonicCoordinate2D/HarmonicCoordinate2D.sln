@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.136
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HarmonicCoordinate2D", "HarmonicCoordinate2D\HarmonicCoordinate2D.vcxproj", "{77818331-63CD-42A7-8BD9-68164AA55ADA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Debug|x64.ActiveCfg = Debug|x64
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Debug|x64.Build.0 = Debug|x64
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Debug|x86.ActiveCfg = Debug|Win32
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Debug|x86.Build.0 = Debug|Win32
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Release|x64.ActiveCfg = Release|x64
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Release|x64.Build.0 = Release|x64
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Release|x86.ActiveCfg = Release|Win32
+		{77818331-63CD-42A7-8BD9-68164AA55ADA}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9C55A981-9661-4DFF-877C-9397424EEC9F}
+	EndGlobalSection
+EndGlobal
