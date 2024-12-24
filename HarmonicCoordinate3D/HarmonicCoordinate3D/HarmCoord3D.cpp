@@ -7,17 +7,6 @@
 
 using namespace std;
 
-//todo generate map
-//todo generate constratin 
-//todo perform smoothing 
-//todo perform smoothing in hierarchical order 
-//todo compute hc for all vertices
-
-
-
-
-
-
 //note : map[i,j,k] corresponds to [ m_map_pos + m_map_pitch * (i+0.5,j+0.5,k+0.5) ]
 //note : (x,y,z) in 3d space corresponds to map[i,j,k] 
 //              (i.j,k) = (int)( ((x,y,z) - m_map_pos) / m_map_pitch ); 
@@ -40,9 +29,8 @@ void HarmCoord3D::InitMap()
                 (int)(bbsize[2] / m_map_pitch + 0.9999f) + 2 ;
 
   std::cout << "compute Harmonic coordinate volume configuration\n";
-
   Trace(m_map_reso);
-  Trace(m_map_pos );
+  Trace(m_map_pos );  
   std::cout << "pitch  =  " << m_map_pitch << "\n";
 
   //calc flag image (0:out,1:inside,2:boundary)
@@ -51,7 +39,7 @@ void HarmCoord3D::InitMap()
   // cast ray in Y axis ( divide ZX plane )  
   TMesh cage = m_cage;
   cage.Translate( -m_map_pos );
-  EVec3f pitch(m_map_pitch, m_map_pitch,m_map_pitch);
+  EVec3f pitch(m_map_pitch, m_map_pitch, m_map_pitch);
   genBinaryVolumeInTriangleMeshY(m_map_reso, pitch, cage, m_map_flag);
 
   const int W = m_map_reso[0];
@@ -151,7 +139,7 @@ static void SetBoundaryCondition
 )
 {
   EVec3f bbmin, bbmax;
-  CalcBoundBox3D(x0,x1,x2, pitch*1.5f, bbmin, bbmax);
+  CalcBoundBox3D(x0,x1,x2, pitch * 2.5f, bbmin, bbmax); //modified
 
 
   //set boundary condition value
@@ -164,27 +152,36 @@ static void SetBoundaryCondition
       for ( int x = 0; x < W; ++x)
       {
         int i = x + y * W + z * WH;
-        if ( map_flg[i] != 2 ) continue;
 
-        const EVec3f p( (x+0.5f)*pitch + map_pos[0], 
-                        (y+0.5f)*pitch + map_pos[1], 
-                        (z+0.5f)*pitch + map_pos[2] );
+        //consider boundary and background (bkg is necessary for target close to boundary)
+        if ( map_flg[i] == 1 ) continue; 
+
+        const EVec3f p( (x + 0.5f) * pitch + map_pos[0], 
+                        (y + 0.5f) * pitch + map_pos[1], 
+                        (z + 0.5f) * pitch + map_pos[2] );
       
         if ( !IsInBoundingBox(p, bbmin, bbmax) ) continue;
 
         //bacycentric coordinateを計算し三角形の中に入っていたら値 1-s-tを登録
         float s,t;
         if( CalcBarycentricCoordinate(p,x0,x1,x2,s,t) && 
-            -0.0f <= s && s <= 1.0f && -0.0f <= t && t <= 1.0f && 
-            s + t <= 1.00f) 
+            (x0 + s*(x1 - x0) + t*(x2 - x0) - p).norm() < 3 * pitch && 
+            -0.01f <= s && s <= 1.01f && -0.01f <= t && t <= 1.01f &&
+            s + t <= 1.0f) 
         {
           map_hc[i] = 1-s-t;
         }
       }
     }
   }
-
 }
+
+//
+//+ todo bounding conditionの計算方法を改める
+//+ todo 舌モデルでもちゃんと動くか確かめる --> roipainterに移動する
+//+ で初期変形がちゃんとできるか確かめる
+
+
 
 static void SetBoundaryCondition
 (
@@ -223,24 +220,26 @@ static void SetBoundaryCondition
 
 
 
-
 static void LaplacianSmoothing(
-  const int W, const int H, const int D, 
-  const byte *map_flg , // 0:out, 1:in, 2:boundary
-  const int NUN_ITER, 
-  float *map_hc         //contains values only at boundary
+    const int W, 
+    const int H, 
+    const int D, 
+    const byte *map_flg, // 0:out, 1:in, 2:boundary
+    const int NUN_ITER , 
+    float *map_hc        
 )
 {
   const int WH = W*H;
-
   float *tmp = new float[W*H*D];
   memcpy(tmp, map_hc, sizeof(float)*W*H*D);
 
   for ( int iter = 0; iter < NUN_ITER; ++iter)
   {
-    for ( int z = 1; z < D-1; ++z)
-      for ( int y = 1; y < H-1; ++y)
-        for ( int x = 1; x < W-1; ++x)
+    for ( int z = 1; z < D - 1; ++z)
+    {
+      for ( int y = 1; y < H - 1; ++y)
+      { 
+        for ( int x = 1; x < W - 1; ++x)
         {
           int i = x + y * W + z * WH;
           if ( map_flg[i] != 1 ) continue;
@@ -250,11 +249,128 @@ static void LaplacianSmoothing(
                      map_hc[i-WH] + map_hc[i+WH]) / 6.0f;
 
         }
+      }
+    }
     memcpy(map_hc, tmp, sizeof(float)*W*H*D);
   }
-  
-  std::cout << "smoothign done--";
 }
+
+
+static void LaplacianSmoothing_multilevel(
+    const int  W,
+    const int  H,
+    const int  D,
+    const int smoothing_iter_n,
+    const int max_lv,
+    const byte* map_flg, // 0:out, 1:in, 2:boundary
+    float* map_hc        //contains values only at boundary
+)
+{
+  std::vector<EVec3i> maps_reso;
+  std::vector<byte* > maps_flag;
+  std::vector<float*> maps_val;
+  maps_reso.push_back(EVec3i(W, H, D));
+  maps_flag.push_back((byte*)map_flg);
+  maps_val .push_back(map_hc);
+
+  //down sampling
+  for (int lv = 1; lv < max_lv; ++lv)
+  {
+    const EVec3i p_reso = maps_reso[lv - 1];
+    const byte*  p_flg  = maps_flag[lv - 1];
+    const float* p_val  = maps_val [lv - 1];
+
+    //calc resolution
+    int pW = p_reso[0], pH = p_reso[1], pD = p_reso[2], pWH = pW * pH;
+    int w = (pW + 1) / 2, h = (pH + 1) / 2, d = (pD + 1) / 2, wh = w * h;
+
+    //gen flg map
+    byte* flg = new byte[w * h * d];
+    float* val = new float[w * h * d];
+    byte* sum = new byte[w * h * d];
+    memset(flg, 0, sizeof(byte) * w * h * d);
+    memset(val, 0, sizeof(float) * w * h * d);
+    memset(sum, 0, sizeof(byte) * w * h * d);
+    maps_reso.push_back(EVec3i(w, h, d));
+    maps_flag.push_back(flg);
+    maps_val.push_back(val);
+
+    //8個のchild cellsをまわる...
+    //flag: ひとつでもboundary ならboundaryに
+    //val : boundary cellの平均を入れる（in/out cellには0を入れる）
+
+    //pre lv --> new lv
+    for (int z = 0; z < pD; ++z)
+      for (int y = 0; y < pH; ++y)
+        for (int x = 0; x < pW; ++x)
+        {
+          int p_idx = x + y * pW + z * pWH;
+          if (p_flg[p_idx] == 2) {
+            int i = (x / 2) + (y / 2) * w + (z / 2) * wh;
+            flg[i] = 2;
+            sum[i] += 1;
+            val[i] += p_val[p_idx];
+          }
+        }
+
+    //boundary valueを平均値に
+    for (int z = 0; z < d; ++z)
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+        {
+          int i = x + y * w + z * w * h;
+          if (flg[i] == 2) {
+            val[i] /= (float)sum[i];
+          }
+          else {
+            flg[i] = p_flg[2 * x + 2 * y * pW + 2 * z * pWH];
+          }
+        }
+
+    delete[] sum;
+  }
+
+  // smooting and upsampling
+  for (int lv = max_lv - 1; lv >= 0; --lv)
+  {
+    EVec3i reso = maps_reso[lv];
+    byte* flg = maps_flag[lv];
+    float* val = maps_val[lv];
+
+    const int w = reso[0], h = reso[1], d = reso[2];
+
+    //updampling copy value from coarse layer
+    if (lv != max_lv - 1)
+    {
+      const int pW = maps_reso[lv + 1][0], pH = maps_reso[lv + 1][1], pD = maps_reso[lv + 1][2];
+      const float* p_val = maps_val[lv + 1];
+
+      for (int z = 0; z < d; ++z)
+        for (int y = 0; y < h; ++y)
+          for (int x = 0; x < w; ++x)
+          {
+            int i = x + y * w + z * w * h;
+            if (flg[i] != 1) continue;
+            val[i] = p_val[(x / 2) + (y / 2) * pW + (z / 2) * pW * pH];
+          }
+    }
+
+    //smoothing 
+    LaplacianSmoothing(reso[0], reso[1], reso[2], flg, smoothing_iter_n, val);
+  }
+
+  //creanup 
+  for (int lv = 1; lv < max_lv; ++lv)
+  {
+    delete[] maps_val[lv];
+    delete[] maps_flag[lv];
+  }
+
+}
+
+
+
+
 
 
 void HarmCoord3D::CalcHarmonicCoordinateMap()
@@ -273,7 +389,12 @@ void HarmCoord3D::CalcHarmonicCoordinateMap()
 
 #pragma omp parallel for
   for( int ci = 0; ci < N; ++ci)
-    LaplacianSmoothing( W,H,D, m_map_flag, 5000,  m_map_hc[ci]);
+  { 
+    std::cout << "start LaplacianSmoothing_multilevel -- " << ci << "\n";
+    //LaplacianSmoothing(W, H, D, m_map_flag, 5000, m_map_hc[ci]);
+    LaplacianSmoothing_multilevel(W,H,D, 400, 5, m_map_flag, m_map_hc[ci]);
+    std::cout << " -- " << ci << "DONE \n";
+  }
 
 }
 
@@ -326,25 +447,51 @@ std::vector<float> HarmCoord3D::GetHarmonicCoordinate(const EVec3f &v)
                  yt   * ( (1-xt) * m_map_hc[i][map_idx+W+WH] + xt * m_map_hc[i][map_idx+1+W+WH] );
 
     hc[i] = (1-zt) * v0 + zt * v1;
+
     sum += hc[i];
   }
 
-  //std::cout << "sum of hc value (should be 1.0)" << sum << "\n";
+  ////debug 
+  //int f1 = m_map_flag[map_idx];
+  //int f2 = m_map_flag[map_idx + 1];
+  //int f3 = m_map_flag[map_idx + W];
+  //int f4 = m_map_flag[map_idx + 1 + W];
+  //int f5 = m_map_flag[map_idx + WH];
+  //int f6 = m_map_flag[map_idx + 1 + WH];
+  //int f7 = m_map_flag[map_idx + W + WH];
+  //int f8 = m_map_flag[map_idx + 1 + W + WH];
+
+  //bool tf = 
+  //     f1 == 0 || f2 == 0 || f3 == 0 || f4 == 0 || f5 == 0 || f6 == 0 || f7 == 0 || f8 == 0 ||
+  //     f1 == 3 || f2 == 3 || f3 == 3 || f4 == 3 || f5 == 3 || f6 == 3 || f7 == 3 || f8 == 3;
+
+  ////debug 
+  //std::cout << "sum of hc value (should be 1.0)" << sum ;
+  //std::cout << (tf?" outside " : " ") << f1 << f2 << f3 << f4 << f5 << f6 << f7 << f8 <<"\n";
+
   return hc;
 
 }
 
 
 HarmCoord3D::HarmCoord3D(const TMesh &cage, const int num_verts, const EVec3f *verts) : m_cage(cage)
-{
+{ 
+  //initialzie map
+  //m_map_pos
+  //m_map_reso
+  //m_map_flag :0 outside, 1 inside, 2: boundary
   InitMap();
+  
+  //compute harmonic coodinate map (volume)
+  //m_map_hc : harmonic coordianate for each vertex
   CalcHarmonicCoordinateMap();
 
+  //compute harmonic coordinate for each vertex
   m_verts_hc.clear();
-  for ( int i=0; i < num_verts; ++i)
-    m_verts_hc.push_back( GetHarmonicCoordinate(verts[i]) );
-
-
+  for ( int i = 0; i < num_verts; ++i)
+  {
+    m_verts_hc.push_back(GetHarmonicCoordinate(verts[i]));
+  }
 }
 
 #pragma managed

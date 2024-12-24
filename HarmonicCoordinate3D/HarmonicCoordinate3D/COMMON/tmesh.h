@@ -1232,8 +1232,10 @@ inline void genBinaryVolumeInTriangleMeshY
       //int pivIdx = xI ;
       for (auto it = blist.begin(); it != blist.end(); ++it)
       {
-        int pivYi = (int)(it->first / py);
-        for (; yI <= pivYi && yI < H; ++yI) binVol[xI + yI * W + zI*WH] = flag;
+        double piv_yi = flag ? (it->first / py - 0.500000) : // fore to piv_y (y=1.5ならyi=1)
+                              (it->first / py - 0.500001);  // back to piv_y (y=1.5ならyi=0)
+        for (; yI <= piv_yi && yI < H; ++yI) 
+          binVol[xI + yI * W + zI*WH] = flag;
         flag = !flag;
       }
       if (flag == true) std::cout << "error double check here!";

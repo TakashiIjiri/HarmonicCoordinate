@@ -23,14 +23,35 @@ static float CP_RADIUS = 0.15f;
 TCore::TCore()
 {
   //load 3d mesh
-  m_mesh.initialize("bunny.obj");
-  EVec3f bbmin, bbmax;
-  m_mesh.getBoundBox(bbmin, bbmax);
-  float length = max3(bbmax[0] - bbmin[0], bbmax[1] - bbmin[1], bbmax[2] - bbmin[2]);
-  m_mesh.Translate( -0.5 * (bbmin + bbmax) );
-  m_mesh.Scale(4.0f / length);
+  
+  if (true)
+  { 
+    m_mesh.initialize("bunny.obj");
+    EVec3f bbmin, bbmax;
+    m_mesh.getBoundBox(bbmin, bbmax);
+    float length = max3(bbmax[0] - bbmin[0], bbmax[1] - bbmin[1], bbmax[2] - bbmin[2]);
+    m_mesh.Translate( -0.5 * (bbmin + bbmax) );
+    m_mesh.Scale(4.0f / length);
 
-  m_cage.initialize("bunnycage.obj");
+    m_cage.initialize("bunnycage.obj");
+  }
+  else
+  {
+    //for different obj and cage
+    m_mesh.initialize("bunny.obj");
+    m_cage.initialize("bunnycage.obj");
+
+    EVec3f cuboid(10, 10, 10);
+    EVec3f bbmin, bbmax;
+    m_cage.getBoundBox(bbmin, bbmax);
+    int idx = max3id(bbmax[0] - bbmin[0], bbmax[1] - bbmin[1], bbmax[2] - bbmin[2]);
+    m_cage.Scale(0.5f * cuboid[idx] / (bbmax[idx] - bbmin[idx]));
+    m_mesh.Scale(0.5f * cuboid[idx] / (bbmax[idx] - bbmin[idx]));
+    EVec3f gc = m_cage.getGravityCenter();
+    m_cage.Translate(-gc + cuboid / 2);
+    m_mesh.Translate(-gc + cuboid / 2);
+  }
+
 
   m_cp_mesh.initializeIcosaHedron( CP_RADIUS );
 
@@ -212,7 +233,8 @@ void TCore::DrawScene()
   glEnable(GL_LIGHT0);
   glEnable(GL_LIGHT1);
   glEnable(GL_LIGHT2);
-  m_mesh.draw(diff, ambi, spec, shin);
+  if (!IsSpaceKeyOn())
+    m_mesh.draw(diff, ambi, spec, shin);
   //m_cage.draw(diff, ambi, spec, shin);
 
   for( int i=0; i < m_cage.m_vSize; ++i) {
@@ -255,13 +277,15 @@ void TCore::DrawHarmCoordValue()
       for ( int x = 0; x < W; ++x) 
       {
         const int i = x + y * W + z * WH;
-        if( flg[i] != 2) continue;
-        float xx = orig[0] + (x + 0.5f) * p;
-        float yy = orig[1] + (y + 0.5f) * p;
-        float zz = orig[2] + (z + 0.5f) * p;
-        float c=  hc[i] * 1.5f;
-        glColor3f(c, c, 0);
-        glVertex3f(xx,yy,zz);
+        if (flg[i] == 2 || (flg[i] == 0 && hc[i] > 0))
+        {
+          float xx = orig[0] + (x + 0.5f) * p;
+          float yy = orig[1] + (y + 0.5f) * p;
+          float zz = orig[2] + (z + 0.5f) * p;
+          float c=  hc[i] * 1.5f;
+          glColor3f(c, c, 0);
+          glVertex3f(xx,yy,zz);
+        }
       }
     }
   }
